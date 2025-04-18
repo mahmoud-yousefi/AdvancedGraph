@@ -303,7 +303,6 @@ const GraphAnalyzer: React.FC = () => {
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
                                     cooldownTime={2000}
-                                    onEngineStop={() => fgRef.current?.zoomToFit(400)}
                                 />
                             </div>
                             <p><strong>Connectivity:</strong> {connectivity}</p>
@@ -323,7 +322,6 @@ const GraphAnalyzer: React.FC = () => {
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
                                     cooldownTime={2000}
-                                    onEngineStop={() => lineFgRef.current?.zoomToFit(400)}
                                 />
                             </div>
                         </>
