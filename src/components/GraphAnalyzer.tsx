@@ -87,8 +87,8 @@ const GraphAnalyzer: React.FC = () => {
     const n = inDegrees.length;
     const nodes: Node[] = Array.from({ length: n }, (_, i) => ({ id: `v${i + 1}` }));
     const links: Link[] = [];
-    let remainingIn = [...inDegrees];
-    let remainingOut = [...outDegrees];
+    const remainingIn = [...inDegrees];
+    const remainingOut = [...outDegrees];
 
     for (let i = 0; i < n; i++) {
       const currentOut = remainingOut[i];
@@ -105,7 +105,7 @@ const GraphAnalyzer: React.FC = () => {
 
   const generateLineGraph = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): { nodes: Node[]; links: Link[] } => {
     const edgeNodes: Node[] = graph.links.map((link, index) => ({
-      id: `e${index + 1}[${link.source}->${link.target}]`,
+      id: `e${index + 1}[${link.source},${link.target}]`,
     }));
 
     const edgeLinks: Link[] = [];
@@ -114,12 +114,10 @@ const GraphAnalyzer: React.FC = () => {
         if (i === j) continue;
 
         if (directed) {
-          // Directed line graph: e1 -> e2 if e1's target == e2's source
           if (graph.links[i].target === graph.links[j].source) {
             edgeLinks.push({ source: edgeNodes[i].id, target: edgeNodes[j].id });
           }
         } else {
-          // Undirected line graph: edges are adjacent if they share a vertex
           if (graph.links[i].source === graph.links[j].source ||
               graph.links[i].source === graph.links[j].target ||
               graph.links[i].target === graph.links[j].source ||
@@ -159,7 +157,6 @@ const GraphAnalyzer: React.FC = () => {
     const connected = visited.every(v => v);
     if (!directed) return connected ? 'Connected' : 'Disconnected';
 
-    // Strong connectivity check for directed graphs
     const visitedReverse = Array(n).fill(false);
     const reverseAdj: boolean[][] = Array.from({ length: n }, () => []);
     graph.links.forEach(({ source, target }) => {
@@ -213,6 +210,23 @@ const GraphAnalyzer: React.FC = () => {
         setLineGraph(generateLineGraph(graph!, true));
       }
     }
+  };
+
+  const nodePaint = (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const label = node.id;
+    const fontSize = 12 / globalScale;
+    ctx.font = `${fontSize}px Sans-Serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const radius = 15 / globalScale;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+    ctx.fillStyle = graphType === 'directed' ? '#69b3a2' : '#4287f5';
+    ctx.fill();
+
+    ctx.fillStyle = 'white';
+    ctx.fillText(label, node.x, node.y);
   };
 
   return (
@@ -283,7 +297,7 @@ const GraphAnalyzer: React.FC = () => {
                 graphData={originalGraph}
                 width={400}
                 height={300}
-                nodeLabel="id"
+                nodeCanvasObject={nodePaint}
                 linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 0}
                 linkDirectionalArrowRelPos={1}
               />
@@ -298,7 +312,7 @@ const GraphAnalyzer: React.FC = () => {
                 graphData={lineGraph}
                 width={400}
                 height={300}
-                nodeLabel="id"
+                nodeCanvasObject={nodePaint}
                 linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 0}
                 linkDirectionalArrowRelPos={1}
               />
