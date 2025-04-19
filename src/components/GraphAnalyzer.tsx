@@ -37,39 +37,44 @@ const GraphAnalyzer: React.FC = () => {
         const sumIn = inDegrees.reduce((a, b) => a + b, 0);
         const sumOut = outDegrees.reduce((a, b) => a + b, 0);
         if (sumIn !== sumOut) return false;
-
+    
         const n = inDegrees.length;
         const remainingIn = [...inDegrees];
         const remainingOut = [...outDegrees];
-        const adjacency = Array(n).fill(null).map(() => new Set<number>()); // Track existing edges
-
+        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false)); // Full adjacency matrix
+    
         const nodeIndices = Array.from({ length: n }, (_, i) => i);
-
+    
         while (true) {
             nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
             const current = nodeIndices.find(node => remainingOut[node] > 0);
             if (current === undefined) break;
-
-            const d = remainingOut[current];
+    
+            const required = remainingOut[current];
             remainingOut[current] = 0;
-
-            if (d < 0 || d > n - 1) return false;
-
-            // Get eligible targets (not already connected)
+    
+            if (required < 0 || required > n - 1) return false;
+    
+            // Find eligible targets (no existing connection in either direction)
             const eligibleTargets = nodeIndices
-                .filter(node => node !== current && !adjacency[current].has(node))
+                .filter(node => 
+                    node !== current &&
+                    !adjacency[current][node] && 
+                    !adjacency[node][current] &&
+                    remainingIn[node] > 0
+                )
                 .sort((a, b) => remainingIn[b] - remainingIn[a]);
-
-            if (eligibleTargets.length < d) return false;
-
-            for (let i = 0; i < d; i++) {
+    
+            if (eligibleTargets.length < required) return false;
+    
+            for (let i = 0; i < required; i++) {
                 const target = eligibleTargets[i];
-                adjacency[current].add(target);
+                adjacency[current][target] = true;
                 remainingIn[target]--;
                 if (remainingIn[target] < 0) return false;
             }
         }
-
+    
         return remainingIn.every(d => d === 0);
     };
 
@@ -102,38 +107,44 @@ const GraphAnalyzer: React.FC = () => {
 
     const constructDirectedGraph = (inDegrees: number[], outDegrees: number[]): { nodes: Node[]; links: Link[] } | null => {
         if (!isDirectedGraphic(inDegrees, outDegrees)) return null;
-
+    
         const n = inDegrees.length;
         const nodes: Node[] = Array.from({ length: n }, (_, i) => ({ id: `v${i + 1}` }));
         const links: Link[] = [];
         const remainingIn = [...inDegrees];
         const remainingOut = [...outDegrees];
-        const adjacency = Array(n).fill(null).map(() => new Set<number>());
+        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
         const nodeIndices = Array.from({ length: n }, (_, i) => i);
-
+    
         while (true) {
             nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
             const current = nodeIndices.find(node => remainingOut[node] > 0);
             if (current === undefined) break;
-
-            const d = remainingOut[current];
+    
+            const required = remainingOut[current];
             remainingOut[current] = 0;
-
-            // Get eligible targets
+    
+            // Find valid targets with strict no-bidirectional constraint
             const eligibleTargets = nodeIndices
-                .filter(node => node !== current && !adjacency[current].has(node))
+                .filter(node => 
+                    node !== current &&
+                    !adjacency[current][node] &&
+                    !adjacency[node][current] &&
+                    remainingIn[node] > 0
+                )
                 .sort((a, b) => remainingIn[b] - remainingIn[a]);
-
-            for (let i = 0; i < d; i++) {
+    
+            for (let i = 0; i < required; i++) {
                 const target = eligibleTargets[i];
                 links.push({ source: `v${current + 1}`, target: `v${target + 1}` });
-                adjacency[current].add(target);
+                adjacency[current][target] = true;
                 remainingIn[target]--;
             }
         }
-
+    
         return { nodes, links };
     };
+    
 
     const generateLineGraph = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): { nodes: Node[]; links: Link[] } => {
         const edgeNodes: Node[] = graph.links.map((link, index) => ({
@@ -341,7 +352,7 @@ const GraphAnalyzer: React.FC = () => {
                         </>
                     )}
 
-                    {isGraphic && lineGraph && (
+                    {isGraphic && lineGraph && graphType === 'undirected' && (
                         <>
                             <h3>Line Graph</h3>
                             <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
@@ -350,7 +361,7 @@ const GraphAnalyzer: React.FC = () => {
                                     width={600}
                                     height={400}
                                     nodeCanvasObject={nodePaint}
-                                    linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 0}
+                                    linkDirectionalArrowLength={/* graphType === 'directed' ? 3.5 : */ 0}
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
                                     cooldownTime={2000}
