@@ -37,8 +37,8 @@ const GraphAnalyzer: React.FC = () => {
         if (inDegrees.reduce((a, b) => a + b) !== outDegrees.reduce((a, b) => a + b)) return false;
 
         const n = inDegrees.length;
-        let remainingIn = [...inDegrees];
-        let remainingOut = [...outDegrees];
+        const remainingIn = [...inDegrees];
+        const remainingOut = [...outDegrees];
 
         for (let i = 0; i < n; i++) {
             remainingOut.sort((a, b) => b - a);
