@@ -13,8 +13,12 @@ const GraphAnalyzer: React.FC = () => {
     const [isGraphic, setIsGraphic] = useState<boolean | null>(null);
     const [originalGraph, setOriginalGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
     const [lineGraph, setLineGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
-    const [connectivity, setConnectivity] = useState<string>('');
-
+    const [connectivity, setConnectivity] = useState<{
+        strongly: boolean;
+        weakly: boolean;
+        unilaterally: boolean;
+    } | null>(null);
+    
     const isUndirectedGraphic = (sequence: number[]): boolean => {
         let seq = [...sequence].sort((a, b) => b - a);
         while (true) {
@@ -174,53 +178,76 @@ const GraphAnalyzer: React.FC = () => {
         return { nodes: edgeNodes, links: edgeLinks };
     };
 
-    const checkConnectivity = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): string => {
+    const checkConnectivity = (
+        graph: { nodes: Node[]; links: Link[] }, 
+        directed: boolean
+    ): { strongly: boolean; weakly: boolean; unilaterally: boolean } => {
         const n = graph.nodes.length;
-        if (n === 0) return 'Connected';
+        if (n === 0) return { strongly: true, weakly: true, unilaterally: true };
 
+        // Build adjacency matrix and reverse adjacency matrix
         const adj: boolean[][] = Array.from({ length: n }, () => Array(n).fill(false));
+        const reverseAdj: boolean[][] = Array.from({ length: n }, () => Array(n).fill(false));
+        
         graph.links.forEach(({ source, target }) => {
             const s = parseInt((source as string).slice(1)) - 1;
             const t = parseInt((target as string).slice(1)) - 1;
             adj[s][t] = true;
-            if (!directed) adj[t][s] = true;
-        });
-
-        const visited = Array(n).fill(false);
-        const dfs = (node: number) => {
-            visited[node] = true;
-            for (let neighbor = 0; neighbor < n; neighbor++) {
-                if ((adj[node][neighbor] || (!directed && adj[neighbor][node])) && !visited[neighbor]) {
-                    dfs(neighbor);
-                }
-            }
-        };
-
-        dfs(0);
-        const connected = visited.every(v => v);
-        if (!directed) return connected ? 'Connected' : 'Disconnected';
-
-        const visitedReverse = Array(n).fill(false);
-        const reverseAdj: boolean[][] = Array.from({ length: n }, () => []);
-        graph.links.forEach(({ source, target }) => {
-            const s = parseInt((source as string).slice(1)) - 1;
-            const t = parseInt((target as string).slice(1)) - 1;
             reverseAdj[t][s] = true;
+            if (!directed) {
+                adj[t][s] = true;
+                reverseAdj[s][t] = true;
+            }
         });
 
-        const dfsReverse = (node: number) => {
-            visitedReverse[node] = true;
-            for (let neighbor = 0; neighbor < n; neighbor++) {
-                if (reverseAdj[node][neighbor] && !visitedReverse[neighbor]) {
-                    dfsReverse(neighbor);
+        // Strong connectivity check
+        const dfs = (start: number, adjacency: boolean[][]) => {
+            const visited = Array(n).fill(false);
+            const stack = [start];
+            visited[start] = true;
+            while (stack.length) {
+                const node = stack.pop()!;
+                for (let neighbor = 0; neighbor < n; neighbor++) {
+                    if (adjacency[node][neighbor] && !visited[neighbor]) {
+                        visited[neighbor] = true;
+                        stack.push(neighbor);
+                    }
                 }
             }
+            return visited;
         };
 
-        dfsReverse(0);
-        const stronglyConnected = visited.every(v => v) && visitedReverse.every(v => v);
+        const stronglyVisited = dfs(0, adj);
+        const stronglyConnected = stronglyVisited.every(v => v) && dfs(0, reverseAdj).every(v => v);
 
-        return stronglyConnected ? 'Strongly Connected' : connected ? 'Weakly Connected' : 'Disconnected';
+        // Weak connectivity check (treat as undirected)
+        const undirectedAdj = adj.map((row, i) => row.map((val, j) => val || reverseAdj[i][j]));
+        const weaklyVisited = dfs(0, undirectedAdj);
+        const weaklyConnected = weaklyVisited.every(v => v);
+
+        // Unilateral connectivity check
+        let unilaterallyConnected = true;
+        if (!stronglyConnected && weaklyConnected) {
+            const reachable = Array(n).fill(null).map((_, i) => dfs(i, adj));
+            
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    if (i !== j && !reachable[i][j] && !reachable[j][i]) {
+                        unilaterallyConnected = false;
+                        break;
+                    }
+                }
+                if (!unilaterallyConnected) break;
+            }
+        } else {
+            unilaterallyConnected = stronglyConnected;
+        }
+
+        return {
+            strongly: directed ? stronglyConnected : weaklyConnected,
+            weakly: weaklyConnected,
+            unilaterally: directed ? unilaterallyConnected : false
+        };
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -348,8 +375,18 @@ const GraphAnalyzer: React.FC = () => {
                                     cooldownTime={2000}
                                 />
                             </div>
-                            <p><strong>Connectivity:</strong> {connectivity}</p>
-                        </>
+                            <div>
+                                <p><strong>Connectivity:</strong></p>
+                                {graphType === 'directed' ? (
+                                    <>
+                                        <p>Strongly Connected: {connectivity?.strongly ? 'Yes' : 'No'}</p>
+                                        <p>Weakly Connected: {connectivity?.weakly ? 'Yes' : 'No'}</p>
+                                        <p>One-Way Connected: {connectivity?.unilaterally ? 'Yes' : 'No'}</p>
+                                    </>
+                                ) : (
+                                    <p>Connected: {connectivity?.strongly ? 'Yes' : 'No'}</p>
+                                )}
+                            </div>                        </>
                     )}
 
                     {isGraphic && lineGraph && graphType === 'undirected' && (
