@@ -137,7 +137,6 @@ const GraphAnalyzer: React.FC = () => {
         const remainingIn = [...inDegrees];
         const remainingOut = [...outDegrees];
         const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
-
         const nodeIndices = Array.from({ length: n }, (_, i) => i);
 
         while (true) {
@@ -149,7 +148,8 @@ const GraphAnalyzer: React.FC = () => {
             remainingOut[current] = 0;
 
             if (required < 0 || required > n - 1) return false;
-
+    
+            // Modified eligibility check: allow reverse edges but prevent parallel edges
             const eligibleTargets = nodeIndices
                 .filter(node =>
                     node !== current &&
@@ -216,12 +216,10 @@ const GraphAnalyzer: React.FC = () => {
 
             const required = remainingOut[current];
             remainingOut[current] = 0;
-
             const eligibleTargets = nodeIndices
                 .filter(node =>
                     node !== current &&
-                    !adjacency[current][node] &&
-                    !adjacency[node][current] &&
+                    !adjacency[current][node] &&  // Only check current->node direction
                     remainingIn[node] > 0
                 )
                 .sort((a, b) => remainingIn[b] - remainingIn[a]);
@@ -416,6 +414,13 @@ const GraphAnalyzer: React.FC = () => {
         ctx.fillText(label, node.x, node.y);
     };
 
+    const calculateCurvature = (link: Link, allLinks: Link[]) => {
+        const reverseExists = allLinks.some(l => 
+            l.source === link.target && l.target === link.source
+        );
+        return reverseExists ? 0.3 : 0;
+    };
+
     return (
         <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
             <h1>Graph Analyzer</h1>
@@ -488,6 +493,7 @@ const GraphAnalyzer: React.FC = () => {
                                     nodeCanvasObject={nodePaint}
                                     linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 0}
                                     linkDirectionalArrowRelPos={1}
+                                    linkCurvature={link => calculateCurvature(link, originalGraph?.links || [])}
                                     cooldownTicks={100}
                                     cooldownTime={2000}
                                 />
