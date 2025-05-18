@@ -4,6 +4,7 @@ import ForceGraph2D from 'react-force-graph-2d';
 type GraphType = 'undirected' | 'directed';
 type Node = { id: string };
 type Link = { source: string; target: string };
+type Clique = string[]; // Array of node IDs in a clique
 
 const GraphAnalyzer: React.FC = () => {
     const [graphType, setGraphType] = useState<GraphType>('undirected');
@@ -18,7 +19,97 @@ const GraphAnalyzer: React.FC = () => {
         weakly: boolean;
         unilaterally: boolean;
     } | null>(null);
-    
+    const [allCliques, setAllCliques] = useState<Clique[] | null>(null);
+    const [maximalCliques, setMaximalCliques] = useState<Clique[] | null>(null);
+
+    // Helper to generate random color for clique visualization
+    const getRandomColor = () => {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+    };
+
+    // Convert graph to adjacency matrix
+    const getAdjacencyMatrix = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): boolean[][] => {
+        const n = graph.nodes.length;
+        const adj = Array.from({ length: n }, () => Array(n).fill(false));
+        graph.links.forEach(({ source, target }) => {
+            const s = parseInt((source as string).slice(1)) - 1;
+            const t = parseInt((target as string).slice(1)) - 1;
+            adj[s][t] = true;
+            if (!directed) adj[t][s] = true;
+        });
+        return adj;
+    };
+
+    // All Clique Algorithm (Backtracking)
+    const findAllCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
+        const adj = getAdjacencyMatrix(graph, false);
+        const n = graph.nodes.length;
+        const result: Clique[] = [];
+
+        const nextClique = (C: string[], P: string[]) => {
+            // Report non-empty cliques
+            if (C.length > 0) {
+                result.push([...C]);
+            }
+
+            if (P.length === 0) return;
+
+            for (let i = 0; i < P.length; i++) {
+                const v = P[i];
+                const newP = P.slice(i + 1).filter(w =>
+                    adj[parseInt(v.slice(1)) - 1][parseInt(w.slice(1)) - 1]
+                );
+                C.push(v);
+                nextClique(C, newP);
+                C.pop();
+            }
+        };
+
+        const C: string[] = [];
+        const P = graph.nodes.map(node => node.id);
+        nextClique(C, P);
+        return result;
+    };
+
+    // Simple All Maximal Clique Algorithm (Bron-Kerbosch)
+    const findMaximalCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
+        const adj = getAdjacencyMatrix(graph, false);
+        const n = graph.nodes.length;
+        const result: Clique[] = [];
+
+        const simpleNextMaximalClique = (C: string[], P: string[], S: string[]) => {
+            if (P.length === 0 && S.length === 0) {
+                if (C.length > 0) result.push([...C]);
+                return;
+            }
+
+            for (let i = 0; i < P.length; i++) {
+                const v = P[i];
+                const newP = P.slice(i + 1).filter(w =>
+                    adj[parseInt(v.slice(1)) - 1][parseInt(w.slice(1)) - 1]
+                );
+                const newS = S.filter(w =>
+                    adj[parseInt(v.slice(1)) - 1][parseInt(w.slice(1)) - 1]
+                );
+                C.push(v);
+                simpleNextMaximalClique(C, newP, newS);
+                C.pop();
+                S.push(v);
+            }
+        };
+
+        const C: string[] = [];
+        const P = graph.nodes.map(node => node.id);
+        const S: string[] = [];
+        simpleNextMaximalClique(C, P, S);
+        return result;
+    };
+
     const isUndirectedGraphic = (sequence: number[]): boolean => {
         let seq = [...sequence].sort((a, b) => b - a);
         while (true) {
@@ -41,36 +132,35 @@ const GraphAnalyzer: React.FC = () => {
         const sumIn = inDegrees.reduce((a, b) => a + b, 0);
         const sumOut = outDegrees.reduce((a, b) => a + b, 0);
         if (sumIn !== sumOut) return false;
-    
+
         const n = inDegrees.length;
         const remainingIn = [...inDegrees];
         const remainingOut = [...outDegrees];
-        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false)); // Full adjacency matrix
-    
+        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
+
         const nodeIndices = Array.from({ length: n }, (_, i) => i);
-    
+
         while (true) {
             nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
             const current = nodeIndices.find(node => remainingOut[node] > 0);
             if (current === undefined) break;
-    
+
             const required = remainingOut[current];
             remainingOut[current] = 0;
-    
+
             if (required < 0 || required > n - 1) return false;
-    
-            // Find eligible targets (no existing connection in either direction)
+
             const eligibleTargets = nodeIndices
-                .filter(node => 
+                .filter(node =>
                     node !== current &&
-                    !adjacency[current][node] && 
+                    !adjacency[current][node] &&
                     !adjacency[node][current] &&
                     remainingIn[node] > 0
                 )
                 .sort((a, b) => remainingIn[b] - remainingIn[a]);
-    
+
             if (eligibleTargets.length < required) return false;
-    
+
             for (let i = 0; i < required; i++) {
                 const target = eligibleTargets[i];
                 adjacency[current][target] = true;
@@ -78,10 +168,9 @@ const GraphAnalyzer: React.FC = () => {
                 if (remainingIn[target] < 0) return false;
             }
         }
-    
+
         return remainingIn.every(d => d === 0);
     };
-
 
     const constructUndirectedGraph = (sequence: number[]): { nodes: Node[]; links: Link[] } | null => {
         if (!isUndirectedGraphic(sequence)) return null;
@@ -111,7 +200,7 @@ const GraphAnalyzer: React.FC = () => {
 
     const constructDirectedGraph = (inDegrees: number[], outDegrees: number[]): { nodes: Node[]; links: Link[] } | null => {
         if (!isDirectedGraphic(inDegrees, outDegrees)) return null;
-    
+
         const n = inDegrees.length;
         const nodes: Node[] = Array.from({ length: n }, (_, i) => ({ id: `v${i + 1}` }));
         const links: Link[] = [];
@@ -119,25 +208,24 @@ const GraphAnalyzer: React.FC = () => {
         const remainingOut = [...outDegrees];
         const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
         const nodeIndices = Array.from({ length: n }, (_, i) => i);
-    
+
         while (true) {
             nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
             const current = nodeIndices.find(node => remainingOut[node] > 0);
             if (current === undefined) break;
-    
+
             const required = remainingOut[current];
             remainingOut[current] = 0;
-    
-            // Find valid targets with strict no-bidirectional constraint
+
             const eligibleTargets = nodeIndices
-                .filter(node => 
+                .filter(node =>
                     node !== current &&
                     !adjacency[current][node] &&
                     !adjacency[node][current] &&
                     remainingIn[node] > 0
                 )
                 .sort((a, b) => remainingIn[b] - remainingIn[a]);
-    
+
             for (let i = 0; i < required; i++) {
                 const target = eligibleTargets[i];
                 links.push({ source: `v${current + 1}`, target: `v${target + 1}` });
@@ -145,10 +233,9 @@ const GraphAnalyzer: React.FC = () => {
                 remainingIn[target]--;
             }
         }
-    
+
         return { nodes, links };
     };
-    
 
     const generateLineGraph = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): { nodes: Node[]; links: Link[] } => {
         const edgeNodes: Node[] = graph.links.map((link, index) => ({
@@ -179,16 +266,15 @@ const GraphAnalyzer: React.FC = () => {
     };
 
     const checkConnectivity = (
-        graph: { nodes: Node[]; links: Link[] }, 
+        graph: { nodes: Node[]; links: Link[] },
         directed: boolean
     ): { strongly: boolean; weakly: boolean; unilaterally: boolean } => {
         const n = graph.nodes.length;
         if (n === 0) return { strongly: true, weakly: true, unilaterally: true };
 
-        // Build adjacency matrix and reverse adjacency matrix
         const adj: boolean[][] = Array.from({ length: n }, () => Array(n).fill(false));
         const reverseAdj: boolean[][] = Array.from({ length: n }, () => Array(n).fill(false));
-        
+
         graph.links.forEach(({ source, target }) => {
             const s = parseInt((source as string).slice(1)) - 1;
             const t = parseInt((target as string).slice(1)) - 1;
@@ -200,7 +286,6 @@ const GraphAnalyzer: React.FC = () => {
             }
         });
 
-        // Strong connectivity check
         const dfs = (start: number, adjacency: boolean[][]) => {
             const visited = Array(n).fill(false);
             const stack = [start];
@@ -220,16 +305,13 @@ const GraphAnalyzer: React.FC = () => {
         const stronglyVisited = dfs(0, adj);
         const stronglyConnected = stronglyVisited.every(v => v) && dfs(0, reverseAdj).every(v => v);
 
-        // Weak connectivity check (treat as undirected)
         const undirectedAdj = adj.map((row, i) => row.map((val, j) => val || reverseAdj[i][j]));
         const weaklyVisited = dfs(0, undirectedAdj);
         const weaklyConnected = weaklyVisited.every(v => v);
 
-        // Unilateral connectivity check
         let unilaterallyConnected = true;
         if (!stronglyConnected && weaklyConnected) {
             const reachable = Array(n).fill(null).map((_, i) => dfs(i, adj));
-            
             for (let i = 0; i < n; i++) {
                 for (let j = 0; j < n; j++) {
                     if (i !== j && !reachable[i][j] && !reachable[j][i]) {
@@ -255,6 +337,8 @@ const GraphAnalyzer: React.FC = () => {
         setIsGraphic(null);
         setOriginalGraph(null);
         setLineGraph(null);
+        setAllCliques(null);
+        setMaximalCliques(null);
 
         if (graphType === 'undirected') {
             const sequence = undirectedInput.split(',').map(Number);
@@ -266,6 +350,8 @@ const GraphAnalyzer: React.FC = () => {
                 setOriginalGraph(graph!);
                 setConnectivity(checkConnectivity(graph!, false));
                 setLineGraph(generateLineGraph(graph!, false));
+                setAllCliques(findAllCliques(graph!));
+                setMaximalCliques(findMaximalCliques(graph!));
             }
         } else {
             const inDegrees = inDegreesInput.split(',').map(Number);
@@ -292,7 +378,38 @@ const GraphAnalyzer: React.FC = () => {
         const radius = 15 / globalScale;
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-        ctx.fillStyle = graphType === 'directed' ? '#69b3a2' : '#4287f5';
+        ctx.fillStyle = node.color || (graphType === 'directed' ? '#69b3a2' : '#4287f5');
+        ctx.fill();
+
+        ctx.fillStyle = 'white';
+        ctx.fillText(label, node.x, node.y);
+    };
+
+    const nodePaintWithCliques = (cliques: Clique[] | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        const label = node.id;
+        const fontSize = 12 / globalScale;
+        ctx.font = `${fontSize}px Sans-Serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const radius = 15 / globalScale;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+
+        // Assign color based on cliques
+        let color = '#4287f5'; // Default color
+        if (cliques) {
+            const cliqueIndex = cliques.findIndex(clique => clique.includes(node.id));
+            if (cliqueIndex !== -1) {
+                // Cache color per clique to ensure consistency
+                if (!cliques[cliqueIndex].color) {
+                    cliques[cliqueIndex].color = getRandomColor();
+                }
+                color = cliques[cliqueIndex].color;
+            }
+        }
+
+        ctx.fillStyle = color;
         ctx.fill();
 
         ctx.fillStyle = 'white';
@@ -386,7 +503,8 @@ const GraphAnalyzer: React.FC = () => {
                                 ) : (
                                     <p>Connected: {connectivity?.strongly ? 'Yes' : 'No'}</p>
                                 )}
-                            </div>                        </>
+                            </div>
+                        </>
                     )}
 
                     {isGraphic && lineGraph && graphType === 'undirected' && (
@@ -398,7 +516,45 @@ const GraphAnalyzer: React.FC = () => {
                                     width={600}
                                     height={400}
                                     nodeCanvasObject={nodePaint}
-                                    linkDirectionalArrowLength={/* graphType === 'directed' ? 3.5 : */ 0}
+                                    linkDirectionalArrowLength={0}
+                                    linkDirectionalArrowRelPos={1}
+                                    cooldownTicks={100}
+                                    cooldownTime={2000}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {isGraphic && graphType === 'undirected' && allCliques && (
+                        <>
+                            <h3>All Cliques</h3>
+                            <p>Found {allCliques.length} cliques: {allCliques.map(clique => `[${clique.join(', ')}]`).join(', ')}</p>
+                            <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
+                                <ForceGraph2D
+                                    graphData={originalGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaintWithCliques(allCliques)}
+                                    linkDirectionalArrowLength={0}
+                                    linkDirectionalArrowRelPos={1}
+                                    cooldownTicks={100}
+                                    cooldownTime={2000}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {isGraphic && graphType === 'undirected' && maximalCliques && (
+                        <>
+                            <h3>Maximal Cliques</h3>
+                            <p>Found {maximalCliques.length} maximal cliques: {maximalCliques.map(clique => `[${clique.join(', ')}]`).join(', ')}</p>
+                            <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
+                                <ForceGraph2D
+                                    graphData={originalGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaintWithCliques(maximalCliques)}
+                                    linkDirectionalArrowLength={0}
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
                                     cooldownTime={2000}
