@@ -12,7 +12,7 @@ const GraphAnalyzer: React.FC = () => {
     const [inDegreesInput, setInDegreesInput] = useState<string>('');
     const [outDegreesInput, setOutDegreesInput] = useState<string>('');
     const [isGraphic, setIsGraphic] = useState<boolean | null>(null);
-    const [originalGraph, setOriginalGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
+    const [originalGraph, setOriginalGraph] = useState<{ nodes: Node[]; links: Link[] } | null | any>(null);
     const [lineGraph, setLineGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
     const [connectivity, setConnectivity] = useState<{
         strongly: boolean;
@@ -48,7 +48,7 @@ const GraphAnalyzer: React.FC = () => {
     // All Clique Algorithm (Backtracking)
     const findAllCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
         const adj = getAdjacencyMatrix(graph, false);
-        const n = graph.nodes.length;
+        // const n = graph.nodes.length;
         const result: Clique[] = [];
 
         const nextClique = (C: string[], P: string[]) => {
@@ -79,7 +79,7 @@ const GraphAnalyzer: React.FC = () => {
     // Simple All Maximal Clique Algorithm (Bron-Kerbosch)
     const findMaximalCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
         const adj = getAdjacencyMatrix(graph, false);
-        const n = graph.nodes.length;
+        // const n = graph.nodes.length;
         const result: Clique[] = [];
 
         const simpleNextMaximalClique = (C: string[], P: string[], S: string[]) => {
@@ -383,7 +383,7 @@ const GraphAnalyzer: React.FC = () => {
         ctx.fillText(label, node.x, node.y);
     };
 
-    const nodePaintWithCliques = (cliques: Clique[] | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const nodePaintWithCliques = (cliques: Clique[] | null | any[]) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const label = node.id;
         const fontSize = 12 / globalScale;
         ctx.font = `${fontSize}px Sans-Serif`;
@@ -414,7 +414,7 @@ const GraphAnalyzer: React.FC = () => {
         ctx.fillText(label, node.x, node.y);
     };
 
-    const calculateCurvature = (link: Link, allLinks: Link[]) => {
+    const calculateCurvature = (link: Link | any, allLinks: Link[]) => {
         const reverseExists = allLinks.some(l => 
             l.source === link.target && l.target === link.source
         );
