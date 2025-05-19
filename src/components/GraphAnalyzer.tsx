@@ -84,7 +84,7 @@ const GraphAnalyzer: React.FC = () => {
 
         const simpleNextMaximalClique = (C: string[], P: string[], S: string[]) => {
             if (P.length === 0 && S.length === 0) {
-                if (C.length > 0) result.push([...C]);
+                if (C.length > 2) result.push([...C]);
                 return;
             }
 
