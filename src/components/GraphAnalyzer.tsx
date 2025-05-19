@@ -53,7 +53,7 @@ const GraphAnalyzer: React.FC = () => {
 
         const nextClique = (C: string[], P: string[]) => {
             // Report non-empty cliques
-            if (C.length > 0) {
+            if (C.length > 2) {
                 result.push([...C]);
             }
 
