@@ -4,7 +4,9 @@ import ForceGraph2D from 'react-force-graph-2d';
 type GraphType = 'undirected' | 'directed';
 type Node = { id: string };
 type Link = { source: string; target: string };
-type Clique = string[]; // Array of node IDs in a clique
+interface Clique extends Array<string> {
+    color?: string;
+}
 
 const GraphAnalyzer: React.FC = () => {
     const [graphType, setGraphType] = useState<GraphType>('undirected');
@@ -21,9 +23,8 @@ const GraphAnalyzer: React.FC = () => {
     } | null>(null);
     const [allCliques, setAllCliques] = useState<Clique[] | null>(null);
     const [maximalCliques, setMaximalCliques] = useState<Clique[] | null>(null);
-    const [maxIndependentSet, setMaxIndependentSet] = useState<Clique | null>(null);
+    const [maxIndependentSets, setMaxIndependentSets] = useState<Clique[] | null>(null);
 
-    // Helper to generate random color for visualization
     const getRandomColor = () => {
         const letters = '0123456789ABCDEF';
         let color = '#';
@@ -33,7 +34,6 @@ const GraphAnalyzer: React.FC = () => {
         return color;
     };
 
-    // Convert graph to adjacency matrix
     const getAdjacencyMatrix = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): boolean[][] => {
         const n = graph.nodes.length;
         const adj = Array.from({ length: n }, () => Array(n).fill(false));
@@ -46,7 +46,6 @@ const GraphAnalyzer: React.FC = () => {
         return adj;
     };
 
-    // Generate complement graph for undirected graph
     const getComplementGraph = (graph: { nodes: Node[]; links: Link[] }): { nodes: Node[]; links: Link[] } => {
         const nodes = [...graph.nodes];
         const adj = getAdjacencyMatrix(graph, false);
@@ -64,7 +63,6 @@ const GraphAnalyzer: React.FC = () => {
         return { nodes, links };
     };
 
-    // All Clique Algorithm (Backtracking)
     const findAllCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
         const adj = getAdjacencyMatrix(graph, false);
         const result: Clique[] = [];
@@ -93,7 +91,6 @@ const GraphAnalyzer: React.FC = () => {
         return result;
     };
 
-    // Simple All Maximal Clique Algorithm (Bron-Kerbosch)
     const findMaximalCliques = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
         const adj = getAdjacencyMatrix(graph, false);
         const result: Clique[] = [];
@@ -126,12 +123,12 @@ const GraphAnalyzer: React.FC = () => {
         return result;
     };
 
-    // Find Maximum Independent Set (Max Clique in Complement Graph)
-    const findMaxIndependentSet = (graph: { nodes: Node[]; links: Link[] }): Clique => {
+    const findMaxIndependentSets = (graph: { nodes: Node[]; links: Link[] }): Clique[] => {
         const complementGraph = getComplementGraph(graph);
         const maximalCliques = findMaximalCliques(complementGraph);
         if (maximalCliques.length === 0) return [];
-        return maximalCliques.reduce((max, clique) => clique.length > max.length ? clique : max, []);
+        const maxSize = Math.max(...maximalCliques.map(clique => clique.length));
+        return maximalCliques.filter(clique => clique.length === maxSize);
     };
 
     const isUndirectedGraphic = (sequence: number[]): boolean => {
@@ -360,7 +357,7 @@ const GraphAnalyzer: React.FC = () => {
         setLineGraph(null);
         setAllCliques(null);
         setMaximalCliques(null);
-        setMaxIndependentSet(null);
+        setMaxIndependentSets(null);
 
         if (graphType === 'undirected') {
             const sequence = undirectedInput.split(',').map(Number);
@@ -374,7 +371,7 @@ const GraphAnalyzer: React.FC = () => {
                 setLineGraph(generateLineGraph(graph!, false));
                 setAllCliques(findAllCliques(graph!));
                 setMaximalCliques(findMaximalCliques(graph!));
-                setMaxIndependentSet(findMaxIndependentSet(graph!));
+                setMaxIndependentSets(findMaxIndependentSets(graph!));
             }
         } else {
             const inDegrees = inDegreesInput.split(',').map(Number);
@@ -437,7 +434,7 @@ const GraphAnalyzer: React.FC = () => {
         ctx.fillText(label, node.x, node.y);
     };
 
-    const nodePaintWithIndependentSet = (independentSet: Clique | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const nodePaintWithIndependentSets = (independentSets: Clique[] | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const label = node.id;
         const fontSize = 12 / globalScale;
         ctx.font = `${fontSize}px Sans-Serif`;
@@ -449,8 +446,14 @@ const GraphAnalyzer: React.FC = () => {
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
 
         let color = '#4287f5';
-        if (independentSet && independentSet.includes(node.id)) {
-            color = '#ff4500'; // Distinct color for max independent set
+        if (independentSets) {
+            const setIndex = independentSets.findIndex(set => set.includes(node.id));
+            if (setIndex !== -1) {
+                if (!independentSets[setIndex].color) { /* Property 'color' does not exist on type 'Clique'. */
+                    independentSets[setIndex].color = getRandomColor();
+                }
+                color = independentSets[setIndex].color;
+            }
         }
 
         ctx.fillStyle = color;
@@ -615,16 +618,16 @@ const GraphAnalyzer: React.FC = () => {
                         </>
                     )}
 
-                    {isGraphic && graphType === 'undirected' && maxIndependentSet && (
+                    {isGraphic && graphType === 'undirected' && maxIndependentSets && (
                         <>
-                            <h3>Maximum Independent Set</h3>
-                            <p>Maximum Independent Set: [{maxIndependentSet.join(', ')}]</p>
+                            <h3>Maximum Independent Sets</h3>
+                            <p>Found {maxIndependentSets.length} maximum independent sets: {maxIndependentSets.map(set => `[${set.join(', ')}]`).join(', ')}</p>
                             <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
                                 <ForceGraph2D
                                     graphData={originalGraph}
                                     width={600}
                                     height={400}
-                                    nodeCanvasObject={nodePaintWithIndependentSet(maxIndependentSet)}
+                                    nodeCanvasObject={nodePaintWithIndependentSets(maxIndependentSets)}
                                     linkDirectionalArrowLength={0}
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
