@@ -24,6 +24,7 @@ const GraphAnalyzer: React.FC = () => {
     const [allCliques, setAllCliques] = useState<Clique[] | null>(null);
     const [maximalCliques, setMaximalCliques] = useState<Clique[] | null>(null);
     const [maxIndependentSets, setMaxIndependentSets] = useState<Clique[] | null>(null);
+    const [minVertexCover, setMinVertexCover] = useState<Clique | null>(null);
 
     const getRandomColor = () => {
         const letters = '0123456789ABCDEF';
@@ -97,7 +98,7 @@ const GraphAnalyzer: React.FC = () => {
 
         const simpleNextMaximalClique = (C: string[], P: string[], S: string[]) => {
             if (P.length === 0 && S.length === 0) {
-                if (C.length > 2) result.push([...C]);
+                if (C.length > 0) result.push([...C]);
                 return;
             }
 
@@ -129,6 +130,43 @@ const GraphAnalyzer: React.FC = () => {
         if (maximalCliques.length === 0) return [];
         const maxSize = Math.max(...maximalCliques.map(clique => clique.length));
         return maximalCliques.filter(clique => clique.length === maxSize);
+    };
+
+    const findMinVertexCover = (graph: { nodes: Node[]; links: Link[] }): Clique => {
+        const cover: string[] = [];
+        const edges = [...graph.links];
+        const nodes = graph.nodes.map(node => node.id);
+
+        while (edges.length > 0) {
+            // Count uncovered edges incident to each vertex
+            const edgeCount = nodes.map(node => ({
+                node,
+                count: edges.filter(link =>
+                    (link.source === node || link.target === node) &&
+                    !cover.includes(link.source) &&
+                    !cover.includes(link.target)
+                ).length
+            }));
+
+            // Select vertex with maximum uncovered edges
+            const maxNode = edgeCount.reduce((max, curr) =>
+                curr.count > max.count ? curr : max,
+                { node: '', count: -1 }
+            );
+
+            if (maxNode.count === 0) break;
+
+            cover.push(maxNode.node);
+
+            // Remove covered edges
+            const newEdges = edges.filter(link =>
+                link.source !== maxNode.node && link.target !== maxNode.node
+            );
+            edges.length = 0;
+            edges.push(...newEdges);
+        }
+
+        return cover;
     };
 
     const isUndirectedGraphic = (sequence: number[]): boolean => {
@@ -358,6 +396,7 @@ const GraphAnalyzer: React.FC = () => {
         setAllCliques(null);
         setMaximalCliques(null);
         setMaxIndependentSets(null);
+        setMinVertexCover(null);
 
         if (graphType === 'undirected') {
             const sequence = undirectedInput.split(',').map(Number);
@@ -372,6 +411,7 @@ const GraphAnalyzer: React.FC = () => {
                 setAllCliques(findAllCliques(graph!));
                 setMaximalCliques(findMaximalCliques(graph!));
                 setMaxIndependentSets(findMaxIndependentSets(graph!));
+                setMinVertexCover(findMinVertexCover(graph!));
             }
         } else {
             const inDegrees = inDegreesInput.split(',').map(Number);
@@ -405,7 +445,7 @@ const GraphAnalyzer: React.FC = () => {
         ctx.fillText(label, node.x, node.y);
     };
 
-    const nodePaintWithCliques = (cliques: Clique[] | null | any[]) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const nodePaintWithCliques = (cliques: Clique[] | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const label = node.id;
         const fontSize = 12 / globalScale;
         ctx.font = `${fontSize}px Sans-Serif`;
@@ -449,13 +489,32 @@ const GraphAnalyzer: React.FC = () => {
         if (independentSets) {
             const setIndex = independentSets.findIndex(set => set.includes(node.id));
             if (setIndex !== -1) {
-                if (!independentSets[setIndex].color) { /* Property 'color' does not exist on type 'Clique'. */
+                if (!independentSets[setIndex].color) {
                     independentSets[setIndex].color = getRandomColor();
                 }
                 color = independentSets[setIndex].color;
             }
         }
 
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.fillStyle = 'white';
+        ctx.fillText(label, node.x, node.y);
+    };
+
+    const nodePaintWithVertexCover = (vertexCover: Clique | null) => (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        const label = node.id;
+        const fontSize = 12 / globalScale;
+        ctx.font = `${fontSize}px Sans-Serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const radius = 15 / globalScale;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+
+        const color = vertexCover && vertexCover.includes(node.id) ? '#ff4500' : '#4287f5';
         ctx.fillStyle = color;
         ctx.fill();
 
@@ -628,6 +687,25 @@ const GraphAnalyzer: React.FC = () => {
                                     width={600}
                                     height={400}
                                     nodeCanvasObject={nodePaintWithIndependentSets(maxIndependentSets)}
+                                    linkDirectionalArrowLength={0}
+                                    linkDirectionalArrowRelPos={1}
+                                    cooldownTicks={100}
+                                    cooldownTime={2000}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {isGraphic && graphType === 'undirected' && minVertexCover && (
+                        <>
+                            <h3>Minimum Vertex Cover</h3>
+                            <p>Vertex Cover: [{minVertexCover.join(', ')}]</p>
+                            <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
+                                <ForceGraph2D
+                                    graphData={originalGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaintWithVertexCover(minVertexCover)}
                                     linkDirectionalArrowLength={0}
                                     linkDirectionalArrowRelPos={1}
                                     cooldownTicks={100}
