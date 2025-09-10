@@ -186,48 +186,51 @@ const GraphAnalyzer: React.FC = () => {
         }
     };
 
-    const isDirectedGraphic = (inDegrees: number[], outDegrees: number[]): boolean => {
-        if (inDegrees.length !== outDegrees.length) return false;
-        const sumIn = inDegrees.reduce((a, b) => a + b, 0);
-        const sumOut = outDegrees.reduce((a, b) => a + b, 0);
+    type DNode = { id: number; out: number; in: number };
+
+    const isDirectedGraphic = (inDeg: number[], outDeg: number[]): boolean => {
+        if (inDeg.length !== outDeg.length) return false;
+
+        const n = inDeg.length;
+        const sumIn = inDeg.reduce((a, b) => a + b, 0);
+        const sumOut = outDeg.reduce((a, b) => a + b, 0);
         if (sumIn !== sumOut) return false;
 
-        const n = inDegrees.length;
-        const remainingIn = [...inDegrees];
-        const remainingOut = [...outDegrees];
-        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
-        const nodeIndices = Array.from({ length: n }, (_, i) => i);
+        const nodes: DNode[] = Array.from({ length: n }, (_, i) => ({
+            id: i,
+            out: outDeg[i],
+            in: inDeg[i],
+        }));
 
         while (true) {
-            nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
-            const current = nodeIndices.find(node => remainingOut[node] > 0);
-            if (current === undefined) break;
+            // remove finished vertices
+            const active = nodes.filter(v => v.out > 0 || v.in > 0);
+            if (active.length === 0) return true;
 
-            const required = remainingOut[current];
-            remainingOut[current] = 0;
+            // pick source with max out
+            active.sort((a, b) => b.out - a.out || a.id - b.id);
+            const src = active[0];
+            if (src.out === 0) return false;
 
-            if (required < 0 || required > n - 1) return false;
+            const k = src.out;
+            if (k > active.length - 1) return false;
 
-            const eligibleTargets = nodeIndices
-                .filter(node =>
-                    node !== current &&
-                    !adjacency[current][node] &&
-                    !adjacency[node][current] &&
-                    remainingIn[node] > 0
-                )
-                .sort((a, b) => remainingIn[b] - remainingIn[a]);
+            // choose k targets with max in, excluding src
+            const targets = active
+                .filter(v => v.id !== src.id && v.in > 0)
+                .sort((a, b) => b.in - a.in || a.id - b.id)
+                .slice(0, k);
 
-            if (eligibleTargets.length < required) return false;
+            if (targets.length < k) return false;
 
-            for (let i = 0; i < required; i++) {
-                const target = eligibleTargets[i];
-                adjacency[current][target] = true;
-                remainingIn[target]--;
-                if (remainingIn[target] < 0) return false;
+            for (const t of targets) {
+                t.in -= 1;
+                if (t.in < 0) return false;
+                nodes[t.id].in = t.in;
             }
-        }
 
-        return remainingIn.every(d => d === 0);
+            nodes[src.id].out = 0;
+        }
     };
 
     const constructUndirectedGraph = (sequence: number[]): { nodes: Node[]; links: Link[] } | null => {
@@ -256,41 +259,43 @@ const GraphAnalyzer: React.FC = () => {
         return { nodes, links };
     };
 
-    const constructDirectedGraph = (inDegrees: number[], outDegrees: number[]): { nodes: Node[]; links: Link[] } | null => {
-        if (!isDirectedGraphic(inDegrees, outDegrees)) return null;
+    const constructDirectedGraph = (
+        inDeg: number[],
+        outDeg: number[]
+    ): { nodes: Node[]; links: Link[] } | null => {
+        if (!isDirectedGraphic(inDeg, outDeg)) return null;
 
-        const n = inDegrees.length;
-        const nodes: Node[] = Array.from({ length: n }, (_, i) => ({ id: `v${i + 1}` }));
+        const n = inDeg.length;
+        const resultNodes: Node[] = Array.from({ length: n }, (_, i) => ({ id: `v${i + 1}` }));
         const links: Link[] = [];
-        const remainingIn = [...inDegrees];
-        const remainingOut = [...outDegrees];
-        const adjacency = Array(n).fill(null).map(() => Array(n).fill(false));
-        const nodeIndices = Array.from({ length: n }, (_, i) => i);
 
-        while (true) {
-            nodeIndices.sort((a, b) => remainingOut[b] - remainingOut[a]);
-            const current = nodeIndices.find(node => remainingOut[node] > 0);
-            if (current === undefined) break;
+        const nodes: DNode[] = Array.from({ length: n }, (_, i) => ({
+            id: i,
+            out: outDeg[i],
+            in: inDeg[i],
+        }));
 
-            const required = remainingOut[current];
-            remainingOut[current] = 0;
-            const eligibleTargets = nodeIndices
-                .filter(node =>
-                    node !== current &&
-                    !adjacency[current][node] &&
-                    remainingIn[node] > 0
-                )
-                .sort((a, b) => remainingIn[b] - remainingIn[a]);
+        while (nodes.some(v => v.out > 0)) {
+            const active = nodes.filter(v => v.out > 0 || v.in > 0);
+            active.sort((a, b) => b.out - a.out || a.id - b.id);
+            const src = active[0];
+            const k = src.out;
 
-            for (let i = 0; i < required; i++) {
-                const target = eligibleTargets[i];
-                links.push({ source: `v${current + 1}`, target: `v${target + 1}` });
-                adjacency[current][target] = true;
-                remainingIn[target]--;
+            const targets = active
+                .filter(v => v.id !== src.id && v.in > 0)
+                .sort((a, b) => b.in - a.in || a.id - b.id)
+                .slice(0, k);
+
+            for (const t of targets) {
+                t.in -= 1;
+                nodes[t.id].in = t.in;
+                links.push({ source: `v${src.id + 1}`, target: `v${t.id + 1}` });
             }
+
+            nodes[src.id].out = 0;
         }
 
-        return { nodes, links };
+        return { nodes: resultNodes, links };
     };
 
     const generateLineGraph = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): { nodes: Node[]; links: Link[] } => {
@@ -397,6 +402,8 @@ const GraphAnalyzer: React.FC = () => {
         setMaximalCliques(null);
         setMaxIndependentSets(null);
         setMinVertexCover(null);
+        setEulerianTrail(null);
+        setConnectivity(null);
 
         if (graphType === 'undirected') {
             const sequence = undirectedInput.split(',').map(Number);
@@ -405,13 +412,18 @@ const GraphAnalyzer: React.FC = () => {
 
             if (valid) {
                 const graph = constructUndirectedGraph(sequence);
-                setOriginalGraph(graph!);
-                setConnectivity(checkConnectivity(graph!, false));
-                setLineGraph(generateLineGraph(graph!, false));
-                setAllCliques(findAllCliques(graph!));
-                setMaximalCliques(findMaximalCliques(graph!));
-                setMaxIndependentSets(findMaxIndependentSets(graph!));
-                setMinVertexCover(findMinVertexCover(graph!));
+                if (graph) {
+                    setOriginalGraph(graph);
+                    setConnectivity(checkConnectivity(graph, false));
+                    setLineGraph(generateLineGraph(graph, false));
+                    setAllCliques(findAllCliques(graph));
+                    setMaximalCliques(findMaximalCliques(graph));
+                    setMaxIndependentSets(findMaxIndependentSets(graph));
+                    setMinVertexCover(findMinVertexCover(graph));
+
+                    const trail = findEulerianTrail(graph, false);
+                    setEulerianTrail(trail);
+                }
             }
         } else {
             const inDegrees = inDegreesInput.split(',').map(Number);
@@ -421,9 +433,14 @@ const GraphAnalyzer: React.FC = () => {
 
             if (valid) {
                 const graph = constructDirectedGraph(inDegrees, outDegrees);
-                setOriginalGraph(graph!);
-                setConnectivity(checkConnectivity(graph!, true));
-                setLineGraph(generateLineGraph(graph!, true));
+                if (graph) {
+                    setOriginalGraph(graph);
+                    setConnectivity(checkConnectivity(graph, true));
+                    setLineGraph(generateLineGraph(graph, true));
+
+                    const trail = findEulerianTrail(graph, true);
+                    setEulerianTrail(trail);
+                }
             }
         }
     };
@@ -523,10 +540,74 @@ const GraphAnalyzer: React.FC = () => {
     };
 
     const calculateCurvature = (link: Link | any, allLinks: Link[]) => {
-        const reverseExists = allLinks.some(l => 
+        const reverseExists = allLinks.some(l =>
             l.source === link.target && l.target === link.source
         );
         return reverseExists ? 0.3 : 0;
+    };
+
+    const [eulerianTrail, setEulerianTrail] = useState<string[] | null>(null);
+
+    const findEulerianTrail = (graph: { nodes: Node[], links: Link[] }, directed: boolean): string[] | null => {
+        const adj: Map<string, string[]> = new Map();
+        graph.nodes.forEach(node => adj.set(node.id, []));
+        graph.links.forEach(({ source, target }) => {
+            adj.get(source as string)!.push(target as string);
+            if (!directed) adj.get(target as string)!.push(source as string);
+        });
+
+        // degree helpers
+        const indeg = new Map<string, number>();
+        const outdeg = new Map<string, number>();
+        graph.nodes.forEach(n => { indeg.set(n.id, 0); outdeg.set(n.id, 0); });
+        graph.links.forEach(({ source, target }) => {
+            outdeg.set(source as string, (outdeg.get(source as string) ?? 0) + 1);
+            indeg.set(target as string, (indeg.get(target as string) ?? 0) + 1);
+            if (!directed) {
+                outdeg.set(target as string, (outdeg.get(target as string) ?? 0) + 1);
+                indeg.set(source as string, (indeg.get(source as string) ?? 0) + 1);
+            }
+        });
+
+        // choose start
+        let start = graph.nodes[0].id;
+        if (!directed) {
+            const odds = graph.nodes.filter(n => (outdeg.get(n.id) ?? 0) % 2 === 1).map(n => n.id);
+            if (odds.length > 2) return null;
+            if (odds.length === 2 || odds.length === 1) start = odds[0];
+        } else {
+            const startCandidates = graph.nodes.filter(n => (outdeg.get(n.id) ?? 0) === (indeg.get(n.id) ?? 0) + 1);
+            const endCandidates = graph.nodes.filter(n => (indeg.get(n.id) ?? 0) === (outdeg.get(n.id) ?? 0) + 1);
+            if (startCandidates.length > 1 || endCandidates.length > 1) return null;
+            if (startCandidates.length === 1) start = startCandidates[0].id;
+        }
+
+        const trail: string[] = [];
+
+        const iter = (u: string) => {
+            while (adj.get(u)!.length > 0) {
+                const v = adj.get(u)!.pop()!;
+                if (!directed) {
+                    const neighbors = adj.get(v)!;
+                    const index = neighbors.indexOf(u);
+                    if (index !== -1) {
+                        neighbors.splice(index, 1);
+                    }
+                }
+                iter(v);
+            }
+            trail.push(u);
+        };
+
+        iter(start);
+        trail.reverse();
+
+        // Check if all edges were traversed
+        if (trail.length !== graph.links.length + 1) {
+            return null;
+        }
+
+        return trail;
     };
 
     return (
@@ -713,6 +794,50 @@ const GraphAnalyzer: React.FC = () => {
                                 />
                             </div>
                         </>
+                    )}
+
+                    {isGraphic && originalGraph && eulerianTrail === null && (
+                        <div
+                            style={{
+                                padding: "20px",
+                                marginTop: "20px",
+                                backgroundColor: "#ffe6e6",
+                                border: "2px solid #ff4d4f",
+                                borderRadius: "8px",
+                                color: "#a8071a",
+                                fontWeight: "bold",
+                                fontSize: "16px",
+                                textAlign: "center"
+                            }}
+                        >
+                            ⚠️ No Eulerian path or cycle exists in this graph.
+                        </div>
+                    )}
+
+                    {eulerianTrail && originalGraph && (
+                        <div>
+                            <h3>Eulerian {eulerianTrail[0] === eulerianTrail[eulerianTrail.length - 1] ? "Cycle" : "Path"}</h3>
+                            <p>{eulerianTrail.join(" → ")}</p>
+                            <div style={{ width: "600px", height: "400px", border: "1px solid #ccc" }}>
+                                <ForceGraph2D
+                                    graphData={originalGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaint}
+                                    linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 0}
+                                    linkDirectionalArrowRelPos={1}
+                                    linkCurvature={link => calculateCurvature(link, originalGraph?.links || [])}
+                                    linkColor={(link: Link) => {
+                                        // highlight if part of trail
+                                        for (let i = 0; i < eulerianTrail.length - 1; i++) {
+                                            if (link.source === eulerianTrail[i] && link.target === eulerianTrail[i + 1]) return "red";
+                                            if (graphType === 'undirected' && link.target === eulerianTrail[i] && link.source === eulerianTrail[i + 1]) return "red";
+                                        }
+                                        return "#999";
+                                    }}
+                                />
+                            </div>
+                        </div>
                     )}
                 </div>
             )}
