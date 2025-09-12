@@ -35,6 +35,40 @@ const GraphAnalyzer: React.FC = () => {
         return color;
     };
 
+    const deltaG = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): number => {
+        if (directed) {
+            return Math.min(...graph.nodes.map(n => {
+                const indeg = graph.links.filter(l => l.target === n.id).length;
+                const outdeg = graph.links.filter(l => l.source === n.id).length;
+                return Math.min(indeg, outdeg);
+            }));
+        } else {
+            return Math.min(...graph.nodes.map(n =>
+                graph.links.filter(l => l.source === n.id || l.target === n.id).length
+            ));
+        }
+    };
+
+    const [mstGraph, setMstGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
+
+    const buildMST = (graph: { nodes: Node[]; links: Link[] }) => {
+        // treat all edges as weight = 1
+        const parent: Record<string, string> = {};
+        const find = (x: string): string => parent[x] === x ? x : parent[x] = find(parent[x]);
+        const union = (a: string, b: string) => { parent[find(a)] = find(b); };
+
+        graph.nodes.forEach(n => parent[n.id] = n.id);
+
+        const mstLinks: Link[] = [];
+        for (const { source, target } of graph.links) {
+            if (find(source as string) !== find(target as string)) {
+                union(source as string, target as string);
+                mstLinks.push({ source, target });
+            }
+        }
+        return { nodes: graph.nodes, links: mstLinks };
+    };
+
     const getAdjacencyMatrix = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): boolean[][] => {
         const n = graph.nodes.length;
         const adj = Array.from({ length: n }, () => Array(n).fill(false));
@@ -393,6 +427,147 @@ const GraphAnalyzer: React.FC = () => {
         };
     };
 
+    const [edgeConnectivity, setEdgeConnectivity] = useState<number | null>(null);
+    const [edgeConnectivity3, setEdgeConnectivity3] = useState<number | null>(null);
+
+    const lambdaG_Alg3 = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): number => {
+        if (graph.nodes.length === 0) return 0;
+
+        // Step 1: MST
+        const mst = buildMST(graph);
+
+        // Non-leaf vertices Y
+        const degree: Record<string, number> = {};
+        mst.nodes.forEach(n => degree[n.id] = 0);
+        mst.links.forEach(({ source, target }) => {
+            degree[source as string] += 1;
+            degree[target as string] += 1;
+        });
+        const Y = mst.nodes.filter(n => degree[n.id] > 1).map(n => n.id);
+
+        const X = (Y.length <= (mst.nodes.length - Y.length)) ? Y : mst.nodes.map(n => n.id).filter(id => !Y.includes(id));
+
+        if (X.length === 0) return deltaG(graph, directed);
+
+        // Step 2: pick v and Z
+        const v = X[0];
+        const Z = X.filter(id => id !== v);
+
+        if (Z.length === 0) return deltaG(graph, directed);
+
+        // Step 3: compute λ(v,w)
+        let c = Infinity;
+        for (const w of Z) {
+            const val = lambdaVW(graph, v, w, directed);
+            c = Math.min(c, val);
+        }
+
+        // Step 5: return min(c, δ(G))
+        return Math.min(c, deltaG(graph, directed));
+    };
+
+    // ---------- Max Flow (Edmonds-Karp) ----------
+    const bfs = (residual: Map<string, Map<string, number>>, source: string, sink: string, parent: Map<string, string>): boolean => {
+        const visited = new Set<string>();
+        const queue: string[] = [source];
+        visited.add(source);
+
+        while (queue.length > 0) {
+            const u = queue.shift()!;
+            for (const [v, cap] of residual.get(u)?.entries() || []) {
+                if (!visited.has(v) && cap > 0) {
+                    visited.add(v);
+                    parent.set(v, u);
+                    if (v === sink) return true;
+                    queue.push(v);
+                }
+            }
+        }
+        return false;
+    };
+
+    const maxFlow = (graph: { [u: string]: { [v: string]: number } }, source: string, sink: string): number => {
+        // build residual graph
+        const residual = new Map<string, Map<string, number>>();
+        Object.keys(graph).forEach(u => {
+            residual.set(u, new Map());
+            Object.keys(graph[u]).forEach(v => {
+                residual.get(u)!.set(v, graph[u][v]);
+            });
+        });
+
+        let flow = 0;
+        const parent = new Map<string, string>();
+
+        while (bfs(residual, source, sink, parent)) {
+            let pathFlow = Infinity;
+            let v = sink;
+            while (v !== source) {
+                const u = parent.get(v)!;
+                pathFlow = Math.min(pathFlow, residual.get(u)!.get(v)!);
+                v = u;
+            }
+            v = sink;
+            while (v !== source) {
+                const u = parent.get(v)!;
+                residual.get(u)!.set(v, residual.get(u)!.get(v)! - pathFlow);
+                if (!residual.get(v)) residual.set(v, new Map());
+                residual.get(v)!.set(u, (residual.get(v)!.get(u) || 0) + pathFlow);
+                v = u;
+            }
+            flow += pathFlow;
+        }
+        return flow;
+    };
+
+    // ---------- Algorithm 1: λ(v, w) ----------
+    const lambdaVW = (graph: { nodes: Node[]; links: Link[] }, v: string, w: string, directed: boolean): number => {
+        // Build adjacency with unit capacities
+        const adj: { [u: string]: { [v: string]: number } } = {};
+        graph.nodes.forEach(n => { adj[n.id] = {}; });
+
+        graph.links.forEach(({ source, target }) => {
+            const s = source as string;
+            const t = target as string;
+            adj[s][t] = 1;
+            if (!directed) {
+                adj[t][s] = 1;
+            }
+        });
+
+        return maxFlow(adj, v, w);
+    };
+
+    // ---------- Algorithm 2: λ(G) ----------
+    const lambdaG = (graph: { nodes: Node[]; links: Link[] }, directed: boolean): number => {
+        if (graph.nodes.length === 0) return 0;
+        const v = graph.nodes[0].id; // pick any vertex
+        let minLambda = Infinity;
+        for (const node of graph.nodes) {
+            if (node.id === v) continue;
+            const val = lambdaVW(graph, v, node.id, directed);
+            minLambda = Math.min(minLambda, val);
+        }
+        return minLambda;
+    };
+
+    const [doubleGraph, setDoubleGraph] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
+
+    const buildDoubleGraph = (graph: { nodes: Node[]; links: Link[] }, directed: boolean) => {
+        const nodes = [...graph.nodes];
+        const links: Link[] = [];
+
+        graph.links.forEach(({ source, target }) => {
+            links.push({ source, target }); // keep original
+            if (!directed) {
+                // add reverse edge too
+                links.push({ source: target as string, target: source as string });
+            }
+        });
+
+        return { nodes, links };
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setIsGraphic(null);
@@ -423,6 +598,14 @@ const GraphAnalyzer: React.FC = () => {
 
                     const trail = findEulerianTrail(graph, false);
                     setEulerianTrail(trail);
+
+                    const lambdaVal = lambdaG(graph, false);
+                    setEdgeConnectivity(lambdaVal);
+                    setDoubleGraph(buildDoubleGraph(graph, false));
+
+                    const lambdaVal3 = lambdaG_Alg3(graph, false);
+                    setEdgeConnectivity3(lambdaVal3);
+                    setMstGraph(buildMST(graph));
                 }
             }
         } else {
@@ -440,6 +623,14 @@ const GraphAnalyzer: React.FC = () => {
 
                     const trail = findEulerianTrail(graph, true);
                     setEulerianTrail(trail);
+
+                    const lambdaVal = lambdaG(graph, true);
+                    setEdgeConnectivity(lambdaVal);
+                    setDoubleGraph(buildDoubleGraph(graph, true));
+
+                    const lambdaVal3 = lambdaG_Alg3(graph, true);
+                    setEdgeConnectivity3(lambdaVal3);
+                    setMstGraph(buildMST(graph));
                 }
             }
         }
@@ -543,7 +734,7 @@ const GraphAnalyzer: React.FC = () => {
         const reverseExists = allLinks.some(l =>
             l.source === link.target && l.target === link.source
         );
-        return reverseExists ? 0.3 : 0;
+        return reverseExists ? 0.2 : 0;
     };
 
     const [eulerianTrail, setEulerianTrail] = useState<string[] | null>(null);
@@ -838,6 +1029,77 @@ const GraphAnalyzer: React.FC = () => {
                                 />
                             </div>
                         </div>
+                    )}
+
+                    {isGraphic && edgeConnectivity !== null && edgeConnectivity !== 0 && (
+                        <div style={{ marginTop: "20px" }}>
+                            <h3>Edge Connectivity λ(G) (Algorithm 2)</h3>
+                            <p><strong>λ(G) = {edgeConnectivity}</strong></p>
+                        </div>
+                    )}
+
+                    {
+                        edgeConnectivity === 0 && (
+                            <div
+                                style={{
+                                    padding: "20px",
+                                    marginTop: "20px",
+                                    backgroundColor: "#ffe6e6",
+                                    border: "2px solid #ff4d4f",
+                                    borderRadius: "8px",
+                                    color: "#a8071a",
+                                    fontWeight: "bold",
+                                    fontSize: "16px",
+                                    textAlign: "center"
+                                }}
+                            >
+                                ⚠️ Graph is disconnected, it is not possible to compute edge connectivity.
+                            </div>
+                        )
+                    }
+
+                    {isGraphic && doubleGraph && edgeConnectivity !== null && edgeConnectivity !== 0 && (
+                        <>
+                            <h3>Graph Representation</h3>
+                            <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
+                                <ForceGraph2D
+                                    graphData={doubleGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaint}
+                                    linkDirectionalArrowLength={graphType === 'directed' ? 3.5 : 3.5}
+                                    linkDirectionalArrowRelPos={1}
+                                    linkCurvature={link => calculateCurvature(link, doubleGraph?.links || [])}
+                                    cooldownTicks={100}
+                                    cooldownTime={2000}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {isGraphic && edgeConnectivity3 !== null && edgeConnectivity3 !== 0 && (
+                        <div style={{ marginTop: "20px" }}>
+                            <h3>Edge Connectivity λ(G) (Algorithm 3)</h3>
+                            <p><strong>λ(G) = {edgeConnectivity3}</strong></p>
+                        </div>
+                    )}
+
+                    {isGraphic && mstGraph && edgeConnectivity3 !== null && edgeConnectivity3 !== 0 && (
+                        <>
+                            <h3>Minimum Spanning Tree (MST)</h3>
+                            <div style={{ width: '600px', height: '400px', border: '1px solid #ccc' }}>
+                                <ForceGraph2D
+                                    graphData={mstGraph}
+                                    width={600}
+                                    height={400}
+                                    nodeCanvasObject={nodePaint}
+                                    linkDirectionalArrowLength={0}
+                                    linkDirectionalArrowRelPos={1}
+                                    cooldownTicks={100}
+                                    cooldownTime={2000}
+                                />
+                            </div>
+                        </>
                     )}
                 </div>
             )}
